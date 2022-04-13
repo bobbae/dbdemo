@@ -1,4 +1,4 @@
-## Basics
+## Basics / AMPQ using Rabbitmq
 
 Run ./run-rabbitmq.sh
 
