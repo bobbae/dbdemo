@@ -2,9 +2,9 @@
 
 Run ./run-rabbitmq.sh
 
-cd consumer; go run main.go
+go run consumer/main.go
 
-cd producer; go run main.go
+go run producer/main.go
 
 ## MQTT
 
