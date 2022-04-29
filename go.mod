@@ -5,6 +5,7 @@ go 1.18
 require (
 	github.com/bobbae/q v0.0.0-20200507164530-13669bd87257
 	github.com/eclipse/paho.mqtt.golang v1.3.5
+	github.com/go-gota/gota v0.12.0
 	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/lib/pq v1.10.5
@@ -31,4 +32,5 @@ require (
 	golang.org/x/net v0.0.0-20220225172249-27dd8689420f // indirect
 	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9 // indirect
 	golang.org/x/text v0.3.7 // indirect
+	gonum.org/v1/gonum v0.9.1 // indirect
 )

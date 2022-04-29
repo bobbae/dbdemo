@@ -131,7 +131,7 @@ func albumByID(id int64) (Album, error) {
 
 func addAlbum(alb Album) (int64, error) {
 	var id int64
-	err := db.QueryRow("INSERT INTO album (title, artist, price) VALUES ($1, $2, $3) RETURNING id",alb.Title, alb.Artist, alb.Price).Scan(&id)
+	err := db.QueryRow("INSERT INTO album (title, artist, price) VALUES ($1, $2, $3) RETURNING id", alb.Title, alb.Artist, alb.Price).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("addAlbum: %v", err)
 	}

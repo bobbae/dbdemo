@@ -1,0 +1,78 @@
+
+[20:34:47 redis\main.go:44 main.main]
+[33m0.001s[0m [36mGot:[0m
+       [1mval[0m=[36m{"title":"The Modern Sound of Betty Carter","artist":"Betty Carter","price":25.99}[0m
+[33m0.004s[0m [1malbums[0m=[36m[]map[string]interface {}{
+           {
+               "title":  "Blue Train",
+               "artist": "John Coltrane",
+               "price":  float64(56.99),
+           },
+           {
+               "title":  "Giant Steps",
+               "artist": "John Coltrane",
+               "price":  float64(63.99),
+           },
+           {
+               "artist": "Gerry Mulligan",
+               "price":  float64(17.99),
+               "title":  "Jeru",
+           },
+           {
+               "title":  "Sarah Vaughan",
+               "artist": "Sarah Vaughan",
+               "price":  float64(34.98),
+           },
+       }[0m
+[33m0.006s[0m [1mkey[0m=[36malbum:0[0m
+       [1malbum[0m=[36mmap[string]interface {}{
+           "price":  float64(56.99),
+           "title":  "Blue Train",
+           "artist": "John Coltrane",
+       }[0m
+[33m0.008s[0m [1mkey[0m=[36malbum:1[0m
+       [1malbum[0m=[36mmap[string]interface {}{
+           "title":  "Giant Steps",
+           "artist": "John Coltrane",
+           "price":  float64(63.99),
+       }[0m
+[33m0.010s[0m [1mkey[0m=[36malbum:2[0m
+       [1malbum[0m=[36mmap[string]interface {}{
+           "title":  "Jeru",
+           "artist": "Gerry Mulligan",
+           "price":  float64(17.99),
+       }[0m
+[33m0.014s[0m [1mkey[0m=[36malbum:3[0m
+       [1malbum[0m=[36mmap[string]interface {}{
+           "artist": "Sarah Vaughan",
+           "price":  float64(34.98),
+           "title":  "Sarah Vaughan",
+       }[0m
+[33m0.018s[0m [36mGot:[0m [1mhval[0m=[36m[]interface {}{
+           "Jeru",
+           "17.99",
+       }[0m
+[33m0.021s[0m [36mHKEYS[0m
+       [1mhkeys[0m=[36m&redis.StringSliceCmd{
+           baseCmd: redis.baseCmd{
+               _args: {
+                   "hkeys",
+                   "album:2",
+               },
+               err:          nil,
+               _readTimeout: (*time.Duration)(nil),
+           },
+           val: {"title", "artist", "price"},
+       }[0m
+[33m0.024s[0m [36mKeys[0m
+       [1mkeys[0m=[36m&redis.StringSliceCmd{
+           baseCmd: redis.baseCmd{
+               _args: {
+                   "keys",
+                   "album:*",
+               },
+               err:          nil,
+               _readTimeout: (*time.Duration)(nil),
+           },
+           val: {"album:0", "album:1", "album:3", "album:2"},
+       }[0m

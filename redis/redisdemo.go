@@ -52,10 +52,22 @@ func main() {
 	q.Q(albums)
 
 	var key string
+	pipe := client.Pipeline()
 	for i, album := range albums { 
 		key = fmt.Sprintf("album:%d",i)
 		q.Q(key, album)
-		_,err = client.HMSet(key, album).Result()
+		price := album["price"]
+		priceFloat, ok := price.(float64)
+		if !ok {
+			fmt.Println("Error: price is not a float64")
+			break
+		}
+		pipe.HMSet(key, album)
+		pipe.ZAdd("price_list", redis.Z{
+			Score:  float64(priceFloat),
+			Member: key,
+		})
+		_, err = pipe.Exec()
 		if err != nil {
 			fmt.Println(err)
 		}
