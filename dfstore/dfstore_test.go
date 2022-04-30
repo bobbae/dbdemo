@@ -4,11 +4,14 @@ import (
 	"context"
 	"log"
 
+	"testing"
+
+	"dfstore"
 	"github.com/go-gota/gota/dataframe"
 	"github.com/go-gota/gota/series"
 )
 
-func example_test() {
+func TestExample1(t *testing.T) {
 	dataRows := [][]string{
 		{"title", "artist", "price"},
 		{"Blue Train", "John Coltrane", "56.99"},
@@ -17,24 +20,24 @@ func example_test() {
 		{"Sarah Vaughan", "Sarah Vaughan", "34.98"},
 	}
 
-	dfs, err := dfstore.New("postgres://postgres:password@localhost:5432/testdb/albums?sslmode=disable")
+	dfs, err := dfstore.New(context.TODO(), "default")
 	if err != nil {
-		log.Fatal(err)
+		t.Errorf("cannot get new dfstore, %v",err)
+		return
 	}
 	defer dfs.Close()
 
-	err = dfs.WriteRecords(context.TODO(), dataRows)
+	err = dfs.WriteRecords(dataRows)
 	if err != nil {
-		log.Fatal(err)
+		t.Errorf("cannot write, %v", err)
 	}
 	filters := []dataframe.F{
 		dataframe.F{Colname: "artist", Comparator: series.Eq, Comparando: "John Coltrane"},
 		dataframe.F{Colname: "price", Comparator: series.Greater, Comparando: "50"},
 	}
-	res, err := dfs.ReadRecords(context.TODO(), filters)
+	res, err := dfs.ReadRecords(filters, 20)
 	if err != nil {
-		log.Fatal(err)
+		t.Errorf("cannot read, %v", err)
 	}
-	log.Println(res)
-
+	log.Println("read", res)
 }

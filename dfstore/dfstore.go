@@ -35,7 +35,7 @@ type DFStore struct {
 	Q              string
 	DBName         string
 	TableName      string
-	Ctx           *context.Context
+	Ctx           context.Context
 	RedisClient    *redis.Client
 	PostgresClient *sql.DB
 	MySQLClient    *sql.DB
@@ -45,25 +45,26 @@ type DFStore struct {
 	TimescaleClient *sql.DB
 }
 
-func New(ctx *context.Context, URL string) (*DFStore, error) {
+func New(ctx context.Context, kind string) (*DFStore, error) {
 	dfs := DFStore{}
 	dfs.Ctx = ctx
-	if !strings.Contains(URL, ":")  {
-		switch URL {
+	var URL string
+	if !strings.Contains(kind, ":")  {
+		switch kind {
 		case "default":
-			URL = "postgres://root:password@localhost:5432/default/default?sslmode=disable"
+			URL = "postgres://pguser:password@localhost:5432/dfstore1/table1?sslmode=disable"
 		case "document":
-			URL = "mongo://root:password@localhost:27017/default/default?maxPoolSize=20&w=majority"
+			URL = "mongo://root:rootpass@localhost:27017/dfstore1/table1?maxPoolSize=20&w=majority"
 		case "timeseries":
-			URL = "timescale://root:password@localhost:5432/default/default?sslmode=disable"
+			URL = "timescale://tsuser:password@localhost:5432/dfstore1/table1?sslmode=disable"
 		case "memory":
-			URL = "redis://root:password@localhost:6379/0/default"
+			URL = "redis://root:password@localhost:6379/0/table1"
 		case "blob":
-			URL = "blob://root:password@local.dir:0/default/default"
-			//		URL = "blob://root:password@aws.bucket:0/default/default"
+			URL = "blob://root:password@/home/testuser/blobdir:0/dfstore1/table1"
+			// URL = "blob://root:password@aws.bucket:0/dfstore1/table1"
 
 		default:
-			return nil, fmt.Errorf("Not supported: %v", URL)
+			URL = kind
 		}
 	}
 	
@@ -82,7 +83,11 @@ func New(ctx *context.Context, URL string) (*DFStore, error) {
 	dfs.User = u.User.Username()
 	dfs.Path = u.Path
 	dfs.DBName, dfs.TableName = filepath.Split(dfs.Path)
+	dfs.DBName = strings.Replace(dfs.DBName, "/", "", -1)
 	dfs.Q = u.RawQuery
+	q.O = "stderr"
+	q.P = ".*"
+	q.Q(dfs)
 	switch dfs.Kind {
 	case "redis":
 		DBNum, err := strconv.Atoi(dfs.DBName)
@@ -100,7 +105,7 @@ func New(ctx *context.Context, URL string) (*DFStore, error) {
 		}
 		dfs.RedisClient = rclient
 	case "postgres":
-		psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
+		psqlInfo := fmt.Sprintf("host=%s port=%s user=%s "+
 			"password=%s dbname=%s sslmode=disable",
 			dfs.Host, dfs.Port, dfs.User, dfs.Password, dfs.DBName)
 		pdb, err := sql.Open("postgres", psqlInfo)
@@ -124,7 +129,7 @@ func New(ctx *context.Context, URL string) (*DFStore, error) {
 		}
 		dfs.MongodbClient = mongo_client
 	default:
-		return nil,fmt.Errorf("Not supported: %v", dfs.Kind)
+		return nil,fmt.Errorf("not supported: %v", dfs.Kind)
 	}
 
 	return &dfs, nil
@@ -145,7 +150,7 @@ func (dfs DFStore) Close() error {
 			return err
 		}
 	default:
-		return fmt.Errorf("Not supported: %v", dfs.Kind)
+		return fmt.Errorf("not supported: %v", dfs.Kind)
 	}
 	return nil
 }
@@ -196,7 +201,7 @@ func (dfs DFStore) ReadRecords(filters []dataframe.F, limit int) ([][]string, er
 
 func (dfs DFStore) RedisWriteRecords(dataRows [][]string) error {
 	if dfs.Kind != "redis" {
-		return fmt.Errorf("Expect kind redis, got %s", dfs.Kind)
+		return fmt.Errorf("expect kind redis, got %s", dfs.Kind)
 	}
 	if dfs.RedisClient == nil {
 		return fmt.Errorf("RedisClient not initialized")
@@ -211,16 +216,16 @@ func (dfs DFStore) RedisWriteRecords(dataRows [][]string) error {
 			cNames = row
 			cLen = len(cNames)
 			if cLen < 1 {
-				return fmt.Errorf("Not enough columns")
+				return fmt.Errorf("not enough columns")
 			}
 			
 			columns := strings.Join(cNames, ",")
-			key := fmt.Sprintf("schema:%s")
+			key := fmt.Sprintf("schema:%s", dfs.TableName)
 			dfs.RedisClient.Set(key, columns, 0)
 			continue
 		}
 		if len(row) != cLen {
-			return fmt.Errorf("Row %d has %d columns, expected %d", i, len(row), cLen)
+			return fmt.Errorf("row %d has %d columns, expected %d", i, len(row), cLen)
 		}
 		for j, val := range row {
 			key := fmt.Sprintf("%s:%d:%s", dfs.TableName, i, cNames[j])
@@ -266,7 +271,7 @@ func (dfs DFStore) PostgresWriteRecords(dataRows [][]string) error {
 			cNames = row
 			cLen = len(cNames)
 			if cLen < 1 {
-				return fmt.Errorf("Not enough columns")
+				return fmt.Errorf("not enough columns")
 			}
 			columns := strings.Join(cNames, ",")
 			_, err = dfs.PostgresClient.Query("INSERT INTO schema (tablename, columns) VALUES (" + dfs.TableName +  ", " + columns + ")")
@@ -278,7 +283,7 @@ func (dfs DFStore) PostgresWriteRecords(dataRows [][]string) error {
 			continue
 		}
 		if len(row) != cLen {
-			return fmt.Errorf("Row %d has %d columns, expected %d", i, len(row), cLen)
+			return fmt.Errorf("row %d has %d columns, expected %d", i, len(row), cLen)
 		}
 		value := "(" + strings.Join(row, ",") + ")"
 		values = append(values, value)
@@ -295,7 +300,7 @@ func (dfs DFStore) PostgresWriteRecords(dataRows [][]string) error {
 
 func (dfs DFStore) MongodbWriteRecords(dataRows [][]string) error {
 	if dfs.Kind != "mongo" {
-		return fmt.Errorf("Expect kind mongodb, got %s", dfs.Kind)
+		return fmt.Errorf("expect kind mongodb, got %s", dfs.Kind)
 	}
 	if dfs.MongodbClient == nil {
 		return fmt.Errorf("MongodbClient not initialized")
@@ -312,12 +317,12 @@ func (dfs DFStore) MongodbWriteRecords(dataRows [][]string) error {
 			cNames = row
 			cLen = len(cNames)
 			if cLen < 1 {
-				return fmt.Errorf("Not enough columns")
+				return fmt.Errorf("not enough columns")
 			}
 			continue
 		}
 		if len(row) != cLen {
-			return fmt.Errorf("Row %d has %d columns, expected %d", i, len(row), cLen)
+			return fmt.Errorf("row %d has %d columns, expected %d", i, len(row), cLen)
 		}
 
 		kvs := []string{}
@@ -335,7 +340,7 @@ func (dfs DFStore) MongodbWriteRecords(dataRows [][]string) error {
 		bsonRows = append(bsonRows, bRow)
 		
 	}
-	_, err = collection.InsertMany(*dfs.Ctx, bsonRows)
+	_, err = collection.InsertMany(dfs.Ctx, bsonRows)
 	if err != nil {
 		return err
 	}
@@ -345,12 +350,12 @@ func (dfs DFStore) MongodbWriteRecords(dataRows [][]string) error {
 
 func (dfs DFStore) RedisReadRecords(filters []dataframe.F, limit int) ([][]string, error) {
 	if dfs.Kind != "redis" {
-		return nil,fmt.Errorf("Expect kind redis, got %s", dfs.Kind)
+		return nil,fmt.Errorf("expect kind redis, got %s", dfs.Kind)
 	}
 	if dfs.RedisClient == nil {
 		return nil,fmt.Errorf("RedisClient not initialized")
 	}
-	
+
 	if len(filters) < 1 {
 		// fetch columns from schema table
 		columns, err := dfs.RedisClient.Get("schema:" + dfs.TableName).Result()
@@ -418,7 +423,7 @@ func (dfs DFStore) PostgresReadRecords(filters []dataframe.F, limit int) ([][]st
 		conditions = append(conditions,
 			fmt.Sprintf("%s %s '%s'", filt.Colname, filt.Comparator, filt.Comparando))
 	}
-	qStr := fmt.Sprintf("SELECT %s FROM % WHERE %s",
+	qStr := fmt.Sprintf("SELECT %s FROM %s WHERE %s",
 		strings.Join(columns, ","), dfs.TableName,
 		strings.Join(conditions, "AND"))
 
@@ -470,13 +475,13 @@ func (dfs DFStore) MongodbReadRecords(filters []dataframe.F, limit int) ([][]str
 		}
 		bfilters = append(bfilters, bfilter)
 	}
-	cur, err := collection.Find(*dfs.Ctx, bfilters, findOptions)
+	cur, err := collection.Find(dfs.Ctx, bfilters, findOptions)
 	if err != nil {
 		return nil, err
 	}
-	defer cur.Close(*dfs.Ctx)
+	defer cur.Close(dfs.Ctx)
 	var elements []bson.M
-	for cur.Next(*dfs.Ctx) {
+	for cur.Next(dfs.Ctx) {
 		var elem bson.M
 		err := cur.Decode(&elem)
 
