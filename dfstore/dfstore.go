@@ -238,33 +238,52 @@ func (dfs DFStore) RedisWriteRecords(dataRows [][]string) error {
 	return err
 }
 
-
 func (dfs DFStore) PostgresCreateTable(tablename, schema  string) error {
 	if dfs.Kind != "postgres" {
-		return fmt.Errorf("Expect kind postgres, got %s", dfs.Kind)
+		return fmt.Errorf("expect kind postgres, got %s", dfs.Kind)
 	}
 	if dfs.PostgresClient == nil {
 		return fmt.Errorf("PostgresClient not initialized")
 	}
-	_, err := dfs.PostgresClient.Query("CREATE TABLE IF NOT EXISTS " + tablename + " ( " + schema + "  )")
+	qStr := "CREATE TABLE IF NOT EXISTS " + tablename + " ( " + schema + "  )"
+	q.Q(qStr)
+	_, err := dfs.PostgresClient.Query(qStr)
         
 	return err
 }
 
+func wrapValue(val string) string {
+	if val == "" {
+		return "NULL"
+	}
+	return fmt.Sprintf("'%s'", val)
+}
+
+func parenthesize(val string) string {
+	if val == "" {
+		return "NULL"
+	}
+	return fmt.Sprintf("(%s)", val)
+}
+
+// docker exec -it postgresql psql -h localhost -p 5432 -U pguser -W -d testdb
+// CREATE DATABASE dfstore1;
+// CREATE TABLE IF NOT EXISTS schema ( tablename VARCHAR(128) PRIMARY KEY, columns VARCHAR(255) NOT NULL ); 
+
 func (dfs DFStore) PostgresWriteRecords(dataRows [][]string) error {
 	if dfs.Kind != "postgres" {
-		return fmt.Errorf("Expect kind postgres, got %s", dfs.Kind)
+		return fmt.Errorf("expect kind postgres, got %s", dfs.Kind)
 	}
 	if dfs.PostgresClient == nil {
 		return fmt.Errorf("PostgresClient not initialized")
 	}
-	cNames := []string{}
+	var cNames []string
 	cLen := 0
 	var err error
 	columns := ""
-	values := []string{}
 
-	//dfs.PostgresCreateTable("schema", "tablename VARCHAR(128) PRIMARY KEY, columns VARCHAR(255) NOT NULL")
+	dfs.PostgresCreateTable("schema", "tablename VARCHAR(128) PRIMARY KEY, columns VARCHAR(255) NOT NULL")
+	dfs.PostgresCreateTable(dfs.TableName, dataRows[0][0] + " VARCHAR(128) PRIMARY KEY" + strings.Join(dataRows[0], " VARCHAR(128),") + " VARCHAR(128)")
 
 	for i, row := range dataRows {
 		if i == 0 {
@@ -273,28 +292,37 @@ func (dfs DFStore) PostgresWriteRecords(dataRows [][]string) error {
 			if cLen < 1 {
 				return fmt.Errorf("not enough columns")
 			}
-			columns := strings.Join(cNames, ",")
-			_, err = dfs.PostgresClient.Query("INSERT INTO schema (tablename, columns) VALUES (" + dfs.TableName +  ", " + columns + ")")
+			columns = strings.Join(cNames, ",")
+			q.Q(columns)
+			qStr := "INSERT INTO schema (tablename, columns) VALUES " +
+				parenthesize(wrapValue(dfs.TableName) +  "," + wrapValue(columns))
+			q.Q(qStr)
+			_, err = dfs.PostgresClient.Query(qStr)
 			if err != nil {
-				return err
+				//return err
+				q.Q(err)
 			}
 
-			//dfs.PostgresCreateTable(dfs.TableName, strings.Join(cNames, "VARCHAR(128),") + "VARCHAR(128)")
 			continue
 		}
 		if len(row) != cLen {
 			return fmt.Errorf("row %d has %d columns, expected %d", i, len(row), cLen)
 		}
-		value := "(" + strings.Join(row, ",") + ")"
-		values = append(values, value)
+		wrappedRow := []string{}
+		for _, val := range row {
+			wrappedRow = append(wrappedRow, wrapValue(val))
+		}
+
+		value := parenthesize(strings.Join(wrappedRow, ","))
+		qStr := fmt.Sprintf("INSERT INTO %s (%s) VALUES %s", dfs.TableName, columns, value)
+		q.Q(qStr)
+		_, err = dfs.PostgresClient.Query(qStr)
+		if err != nil {
+			q.Q(err)
+		}
 	}
 	
-	qStr := fmt.Sprintf("INSERT INTO %s (%s) VALUES %s", dfs.TableName, columns,
-		strings.Join(values, ",")) 
-
-	_, err = dfs.PostgresClient.Query(qStr)
 	return err
-
 }
 
 
@@ -404,9 +432,18 @@ func (dfs DFStore) RedisReadRecords(filters []dataframe.F, limit int) ([][]strin
 	return df.Records(), nil
 }
 
+func compTranslate(comp string) string {
+	switch comp {
+	case "==":
+		return "="
+	default:
+		return comp
+	} 
+}
+
 func (dfs DFStore) PostgresReadRecords(filters []dataframe.F, limit int) ([][]string, error) {
 	if dfs.Kind != "postgres" {
-		return nil, fmt.Errorf("Expect kind postgres, got %s", dfs.Kind)
+		return nil, fmt.Errorf("expect kind postgres, got %s", dfs.Kind)
 	}
 	if dfs.PostgresClient == nil {
 		return nil, fmt.Errorf("PostgresClient not initialized")
@@ -421,28 +458,36 @@ func (dfs DFStore) PostgresReadRecords(filters []dataframe.F, limit int) ([][]st
 		}
 		//TODO In, Function cases AND/OR
 		conditions = append(conditions,
-			fmt.Sprintf("%s %s '%s'", filt.Colname, filt.Comparator, filt.Comparando))
+			fmt.Sprintf("%s %s '%s'", filt.Colname, compTranslate(string(filt.Comparator)), filt.Comparando))
 	}
-	qStr := fmt.Sprintf("SELECT %s FROM %s WHERE %s",
-		strings.Join(columns, ","), dfs.TableName,
-		strings.Join(conditions, "AND"))
-
+	q.Q(conditions)
+	qStr := fmt.Sprintf("SELECT %s FROM %s WHERE %s", strings.Join(columns, ","), dfs.TableName,
+						strings.Join(conditions, " AND "))
+	q.Q(qStr)
 	rows, err := dfs.PostgresClient.Query(qStr)
 	if err != nil {
+		q.Q(err)
 		return nil,err
 	}
 	defer rows.Close()
 	
 	var results [][]string
 	fields := make([]interface{}, len(columns) )
-
+	q.Q(fields)
 	results = append(results, columns)
+	refs := make([]any, len(columns))
+	for i := range fields {
+		f := &fields[i]
+		*f = new(string)
+		refs[i] = f
+	}
 	for rows.Next() {
-		if err:= rows.Scan(fields...); err != nil {
+		if err:= rows.Scan(refs...); err != nil {
+			q.Q(err)
 			return nil, err
 		}
-		ss := make([]string, len(fields))
-		for i,f := range fields {
+		ss := make([]string, len(refs))
+		for i, f := range refs {
 			ss[i] = fmt.Sprintf("%v", f)
 			//ss[i] = f.(string)
 		}
@@ -451,12 +496,13 @@ func (dfs DFStore) PostgresReadRecords(filters []dataframe.F, limit int) ([][]st
 			break
 		}
 	}
+	q.Q(results)
 	return results,nil
 }
 
 func (dfs DFStore) MongodbReadRecords(filters []dataframe.F, limit int) ([][]string, error) {
 	if dfs.Kind != "mongo" {
-		return nil,fmt.Errorf("Expected mongodb, got %s", dfs.Kind)
+		return nil,fmt.Errorf("expected mongodb, got %s", dfs.Kind)
 	}
 	if dfs.MongodbClient == nil {
 		return nil,fmt.Errorf("MongodbClient not initialized")
