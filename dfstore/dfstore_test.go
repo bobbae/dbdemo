@@ -11,16 +11,32 @@ import (
 	"github.com/go-gota/gota/series"
 )
 
-func TestExample1(t *testing.T) {
-	dataRows := [][]string{
+var dataRows [][]string
+
+func init() {
+	dataRows = [][]string{
 		{"title", "artist", "price"},
 		{"Blue Train", "John Coltrane", "56.99"},
 		{"Giant Steps", "John Coltrane", "63.99"},
 		{"Jeru", "Gerry Mulligan", "17.99"},
 		{"Sarah Vaughan", "Sarah Vaughan", "34.98"},
 	}
+}
 
-	dfs, err := dfstore.New(context.TODO(), "default")
+func TestDefault1(t *testing.T) {
+	example1(t, "default")
+}
+
+func TestMemory1(t *testing.T) {
+	example1(t, "memory")
+}
+
+func TestDocument1(t *testing.T) {
+	example1(t, "document")
+}
+
+func example1(t *testing.T, dbtype string) { 
+	dfs, err := dfstore.New(context.TODO(), dbtype)
 	if err != nil {
 		t.Errorf("cannot get new dfstore, %v",err)
 		return

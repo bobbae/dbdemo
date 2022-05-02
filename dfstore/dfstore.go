@@ -54,7 +54,7 @@ func New(ctx context.Context, kind string) (*DFStore, error) {
 		case "default":
 			URL = "postgres://pguser:password@localhost:5432/dfstore1/table1?sslmode=disable"
 		case "document":
-			URL = "mongo://root:rootpass@localhost:27017/dfstore1/table1?maxPoolSize=20&w=majority"
+			URL = "mongodb://root:rootpass@localhost:27017/dfstore1/table1?maxPoolSize=20&w=majority"
 		case "timeseries":
 			URL = "timescale://tsuser:password@localhost:5432/dfstore1/table1?sslmode=disable"
 		case "memory":
@@ -119,7 +119,7 @@ func New(ctx context.Context, kind string) (*DFStore, error) {
 		//pdb.Query("CREATE database DBName")
 		//pdb.Query("USE DBName")
 		dfs.PostgresClient = pdb
-	case "mongo":
+	case "mongodb":
 		mongo_client, err := mongo.Connect(context.TODO(), options.Client().ApplyURI(dfs.URL))
 		if err != nil {
 			return nil, err
@@ -145,7 +145,7 @@ func (dfs DFStore) Close() error {
 		if err := dfs.PostgresClient.Close(); err != nil {
 			return err
 		}
-	case "mongo":
+	case "mongodb":
 		if err := dfs.MongodbClient.Disconnect(context.TODO()); err != nil {
 			return err
 		}
@@ -165,7 +165,7 @@ func (dfs DFStore) WriteRecords(dataRows [][]string) error {
 		if err := dfs.PostgresWriteRecords(dataRows); err != nil {
 			return err
 		}
-	case "mongo":
+	case "mongodb":
 		if err := dfs.MongodbWriteRecords(dataRows); err != nil {
 			return err
 		}
@@ -189,7 +189,7 @@ func (dfs DFStore) ReadRecords(filters []dataframe.F, limit int) ([][]string, er
 		if res, err = dfs.PostgresReadRecords(filters , limit); err != nil {
 			return nil, err
 		}
-	case "mongo":
+	case "mongodb":
 		if res, err = dfs.MongodbReadRecords(filters, limit); err != nil {
 			return nil, err
 		}
@@ -222,6 +222,7 @@ func (dfs DFStore) RedisWriteRecords(dataRows [][]string) error {
 			columns := strings.Join(cNames, ",")
 			key := fmt.Sprintf("schema:%s", dfs.TableName)
 			dfs.RedisClient.Set(key, columns, 0)
+			q.Q(key, columns)
 			continue
 		}
 		if len(row) != cLen {
@@ -232,8 +233,9 @@ func (dfs DFStore) RedisWriteRecords(dataRows [][]string) error {
 			pairs = append(pairs, key, val)
 		}
 		pipe.MSet(pairs...)
-	
 	}
+	q.Q(pairs)
+
 	_, err = pipe.Exec()
 	return err
 }
@@ -330,7 +332,7 @@ func (dfs DFStore) PostgresWriteRecords(dataRows [][]string) error {
 
 
 func (dfs DFStore) MongodbWriteRecords(dataRows [][]string) error {
-	if dfs.Kind != "mongo" {
+	if dfs.Kind != "mongodb" {
 		return fmt.Errorf("expect kind mongodb, got %s", dfs.Kind)
 	}
 	if dfs.MongodbClient == nil {
@@ -398,6 +400,7 @@ func (dfs DFStore) RedisReadRecords(filters []dataframe.F, limit int) ([][]strin
 			filters = append(filters, dataframe.F{Colname: cN, Comparator: ""})
 		}
 	}
+	q.Q(filters)
 	//TODO validate filters against schema columns
 	var keys []string
 	var results [][]string
@@ -424,6 +427,7 @@ func (dfs DFStore) RedisReadRecords(filters []dataframe.F, limit int) ([][]strin
 		}
 		results = append(results,ss)
 	}
+	q.Q(results)
 	df := dataframe.LoadRecords(results)
 	
 	for _, filt := range filters {
@@ -431,7 +435,7 @@ func (dfs DFStore) RedisReadRecords(filters []dataframe.F, limit int) ([][]strin
 			df = df.Filter(filt)
 		}
 	}
-	
+	q.Q(df.Records())
 	return df.Records(), nil
 }
 
@@ -505,7 +509,7 @@ func (dfs DFStore) PostgresReadRecords(filters []dataframe.F, limit int) ([][]st
 }
 
 func (dfs DFStore) MongodbReadRecords(filters []dataframe.F, limit int) ([][]string, error) {
-	if dfs.Kind != "mongo" {
+	if dfs.Kind != "mongodb" {
 		return nil,fmt.Errorf("expected mongodb, got %s", dfs.Kind)
 	}
 	if dfs.MongodbClient == nil {
