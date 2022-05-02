@@ -239,6 +239,7 @@ func (dfs DFStore) RedisWriteRecords(dataRows [][]string) error {
 }
 
 func (dfs DFStore) PostgresCreateTable(tablename, schema  string) error {
+	q.Q(tablename, schema)
 	if dfs.Kind != "postgres" {
 		return fmt.Errorf("expect kind postgres, got %s", dfs.Kind)
 	}
@@ -283,7 +284,9 @@ func (dfs DFStore) PostgresWriteRecords(dataRows [][]string) error {
 	columns := ""
 
 	dfs.PostgresCreateTable("schema", "tablename VARCHAR(128) PRIMARY KEY, columns VARCHAR(255) NOT NULL")
-	dfs.PostgresCreateTable(dfs.TableName, dataRows[0][0] + " VARCHAR(128) PRIMARY KEY" + strings.Join(dataRows[0], " VARCHAR(128),") + " VARCHAR(128)")
+	dfs.PostgresCreateTable(dfs.TableName, 
+		dataRows[0][0] + " VARCHAR(128) PRIMARY KEY, " + 
+		strings.Join(dataRows[0][1:], " VARCHAR(128),") + " VARCHAR(128)")
 
 	for i, row := range dataRows {
 		if i == 0 {
@@ -472,29 +475,30 @@ func (dfs DFStore) PostgresReadRecords(filters []dataframe.F, limit int) ([][]st
 	defer rows.Close()
 	
 	var results [][]string
-	fields := make([]interface{}, len(columns) )
-	q.Q(fields)
+
 	results = append(results, columns)
-	refs := make([]any, len(columns))
-	for i := range fields {
-		f := &fields[i]
-		*f = new(string)
-		refs[i] = f
+	 
+	fs := make([]interface{}, len(columns))
+	for i := 0; i < len(columns); i++ {
+		s := make([]byte, 128)
+		fs[i] = &s 
 	}
 	for rows.Next() {
-		if err:= rows.Scan(refs...); err != nil {
+		if err:= rows.Scan(fs...); err != nil {
 			q.Q(err)
 			return nil, err
 		}
-		ss := make([]string, len(refs))
-		for i, f := range refs {
-			ss[i] = fmt.Sprintf("%v", f)
-			//ss[i] = f.(string)
-		}
+		q.Q(fmt.Sprintf("%s", fs[0]), fmt.Sprintf("%s", fs[1]))
+		
+		ss := make([]string, len(columns))
+		for i := 0; i < len(columns); i++ {
+			c1 := fmt.Sprintf("%s", fs[i])
+			ss[i] = c1[1:]
+		}		
 		results = append(results, ss)
 		if len(results) > limit {
 			break
-		}
+		} 
 	}
 	q.Q(results)
 	return results,nil

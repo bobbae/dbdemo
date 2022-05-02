@@ -33,7 +33,7 @@ func TestExample1(t *testing.T) {
 	}
 	filters := []dataframe.F{
 		dataframe.F{Colname: "artist", Comparator: series.Eq, Comparando: "John Coltrane"},
-		dataframe.F{Colname: "price", Comparator: series.Greater, Comparando: "50"},
+		dataframe.F{Colname: "price", Comparator: series.Greater, Comparando: "60"},
 	}
 	res, err := dfs.ReadRecords(filters, 20)
 	if err != nil {
