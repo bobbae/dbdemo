@@ -45,6 +45,11 @@ type DFStore struct {
 	TimescaleClient *sql.DB
 }
 
+func init() {
+	q.O = "stderr"
+	q.P = ".*"
+}
+
 func New(ctx context.Context, kind string) (*DFStore, error) {
 	dfs := DFStore{}
 	dfs.Ctx = ctx
@@ -52,11 +57,13 @@ func New(ctx context.Context, kind string) (*DFStore, error) {
 	if !strings.Contains(kind, ":")  {
 		switch kind {
 		case "default":
-			URL = "postgres://pguser:password@localhost:5432/dfstore1/table1?sslmode=disable"
+			//URL = "postgres://pguser:password@localhost:5432/dfstore1/table1?sslmode=disable"
+			URL = "postgres://pguser:password@localhost:5432/dfstore1/table1"
 		case "document":
-			URL = "mongodb://root:rootpass@localhost:27017/dfstore1/table1?maxPoolSize=20&w=majority"
+			//URL = "mongodb://root:rootpass@localhost:27017/dfstore1/table1?maxPoolSize=20&w=majority"
+			URL = "mongodb://root:rootpass@localhost:27017/dfstore1/table1"
 		case "timeseries":
-			URL = "timescale://tsuser:password@localhost:5432/dfstore1/table1?sslmode=disable"
+			URL = "timescale://tsuser:password@localhost:5432/dfstore1/table1"
 		case "memory":
 			URL = "redis://root:password@localhost:6379/0/table1"
 		case "blob":
@@ -85,8 +92,7 @@ func New(ctx context.Context, kind string) (*DFStore, error) {
 	dfs.DBName, dfs.TableName = filepath.Split(dfs.Path)
 	dfs.DBName = strings.Replace(dfs.DBName, "/", "", -1)
 	dfs.Q = u.RawQuery
-	q.O = "stderr"
-	q.P = ".*"
+
 	q.Q(dfs)
 	switch dfs.Kind {
 	case "redis":
@@ -120,7 +126,9 @@ func New(ctx context.Context, kind string) (*DFStore, error) {
 		//pdb.Query("USE DBName")
 		dfs.PostgresClient = pdb
 	case "mongodb":
-		mongo_client, err := mongo.Connect(context.TODO(), options.Client().ApplyURI(dfs.URL))
+		idx := strings.LastIndex(dfs.URL, "/")
+		mURL := dfs.URL[:idx]
+		mongo_client, err := mongo.Connect(context.TODO(), options.Client().ApplyURI(mURL))
 		if err != nil {
 			return nil, err
 		}
@@ -340,7 +348,7 @@ func (dfs DFStore) MongodbWriteRecords(dataRows [][]string) error {
 	}
 	collection := dfs.MongodbClient.Database(dfs.DBName).Collection(dfs.TableName)
 	
-	bsonRows := make([]interface{}, 1)
+	bsonRows := make([]interface{}, 0)
 	cNames := []string{}
 	cLen := 0
 	var err error
@@ -363,16 +371,18 @@ func (dfs DFStore) MongodbWriteRecords(dataRows [][]string) error {
 			kv := fmt.Sprintf(`"%s": "%s"`, cNames[j], row[j])
 			kvs = append(kvs, kv)
 		}
-		
-		jsonD := fmt.Sprintf(`{"id": %d, %s}`, i, strings.Join(kvs, ","))
+		q.Q(kvs)
+		jsonD := fmt.Sprintf(`{"_id": %d, %s}`, i, strings.Join(kvs, ","))
+		q.Q(jsonD)
 		var bRow  interface{}
-		err = bson.UnmarshalExtJSON([]byte(jsonD), false, bRow)
+		err = bson.UnmarshalExtJSON([]byte(jsonD), false, &bRow)
 		if err != nil {
 			return fmt.Errorf("bson UnmarshalExtJSON error, %v", err)
 		}
 		bsonRows = append(bsonRows, bRow)
-		
 	}
+	q.Q(bsonRows)
+
 	_, err = collection.InsertMany(dfs.Ctx, bsonRows)
 	if err != nil {
 		return err
@@ -518,27 +528,57 @@ func (dfs DFStore) MongodbReadRecords(filters []dataframe.F, limit int) ([][]str
 	collection := dfs.MongodbClient.Database(dfs.DBName).Collection(dfs.TableName)
 	
 	findOptions := options.Find()
-	var bfilters []bson.D
+	findOptions.SetLimit(int64(limit))
 
+	//https://www.mongodb.com/docs/manual/tutorial/query-documents/
+	//https://www.mongodb.com/docs/drivers/go/v1.8/fundamentals/crud/query-document/
+
+	var afilter bson.A
+	var dfilter bson.D
+	
 	for _, filt := range filters {
 		if filt.Comparator == "" {
 			continue
 		}
-		bfilter := bson.D{
-			{filt.Colname, filt.Comparando},
+		/* cr, _ := strconv.Atoi(filt.Comparando.(string))
+		 if err != nil {
+			return nil, err
+		} */
+		//https://pkg.go.dev/github.com/go-gota/gota@v0.12.0/series#Series
+		
+		n := filt.Colname
+		p := filt.Comparando
+		switch filt.Comparator {
+		case "==":
+			dfilter = bson.D{{n, p}}
+		case "!=":
+			dfilter = bson.D{{n, bson.D{{"$ne", p}}}}
+		case ">":
+			dfilter = bson.D{{n, bson.D{{"$gt", p}}}}
+		case ">=":
+			dfilter = bson.D{
+				{filt.Colname, bson.D{{"$gte", p}}}}
+		case "<=":
+			dfilter = bson.D{{n, bson.D{{"$lte", p}}}}
+		case "<":
+			dfilter = bson.D{{filt.Colname, bson.D{{"$lt", p}}}}
 		}
-		bfilters = append(bfilters, bfilter)
+		
+		afilter = append(afilter, dfilter)
 	}
-	cur, err := collection.Find(dfs.Ctx, bfilters, findOptions)
+
+	qfilter := bson.D{{ "$and", afilter}}
+	q.Q(qfilter)
+	cur, err := collection.Find(dfs.Ctx, qfilter, findOptions)
 	if err != nil {
 		return nil, err
 	}
 	defer cur.Close(dfs.Ctx)
-	var elements []bson.M
+	var elements []bson.D
 	for cur.Next(dfs.Ctx) {
-		var elem bson.M
+		var elem bson.D
 		err := cur.Decode(&elem)
-
+		q.Q(elem)
 		if err != nil {
 			return nil, err
 		}
@@ -554,16 +594,18 @@ func (dfs DFStore) MongodbReadRecords(filters []dataframe.F, limit int) ([][]str
 	for _, filt := range filters {
 		columns = append(columns, filt.Colname)
 	}
+	q.Q(columns)
 	var results [][]string
 	
 	results = append(results, columns)
 	for _, elem := range elements {
 		var row []string
-		for _, key := range filters {
-			row = append(row, elem[key.Colname].(string))
+		q.Q(elem)
+		for _, col := range elem {
+			row = append(row, fmt.Sprintf("%v", col.Value))
 		}
 		results = append(results, row)
 	}
-
+	q.Q(results)
 	return results, nil
 }

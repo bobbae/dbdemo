@@ -47,6 +47,7 @@ func example1(t *testing.T, dbtype string) {
 	if err != nil {
 		t.Errorf("cannot write, %v", err)
 	}
+	// https://pkg.go.dev/github.com/go-gota/gota/dataframe#DataFrame.Filter
 	filters := []dataframe.F{
 		dataframe.F{Colname: "artist", Comparator: series.Eq, Comparando: "John Coltrane"},
 		dataframe.F{Colname: "price", Comparator: series.Greater, Comparando: "60"},

@@ -1,4 +1,8 @@
-Example usage of mongosh
+### Install mongosh
+
+https://www.mongodb.com/docs/mongodb-shell/install/
+
+### Example usage of mongosh
 
 ```
 $ mongosh mongodb://root:rootpass@localhost:27017
@@ -8,6 +12,14 @@ test> db.dropDatabase('test')
 
 test> use recordings
 switched to db recordings
+
+recordings> db.createCollection('table1')
+
+recordings> db.getCollectionNames()
+
+recordings>  db.createUser( { user: 'root',pwd: 'rootpass', roles: [ { role: "readWrite", db: "dfstore1"} ] } )
+
+recordings> db.getUsers()
 
 recordings> db.getCollection('albums').find().forEach(printjson)
 {
@@ -28,3 +40,4 @@ recordings> db.getCollection('albums').find().forEach(printjson)
 
 recordings> 
 ```
+
