@@ -548,6 +548,7 @@ func (dfs DFStore) MongodbReadRecords(filters []dataframe.F, limit int) ([][]str
 		
 		n := filt.Colname
 		p := filt.Comparando
+		// TODO  in/ function / and/ or / compound cases
 		switch filt.Comparator {
 		case "==":
 			dfilter = bson.D{{n, p}}
